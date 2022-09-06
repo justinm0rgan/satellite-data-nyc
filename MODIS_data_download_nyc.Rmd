@@ -1,0 +1,397 @@
+---
+title: "Modis Data Download NYC"
+author: "Justin Williams"
+date: '2022-06-05'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE)
+```
+
+```{r load-packages, warning=FALSE, message=FALSE}
+if(!require(knitr)) install.packages("knitr", 
+repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", 
+repos = "http://cran.us.r-project.org")
+if(!require(sf)) install.packages("sf", 
+repos = "http://cran.us.r-project.org")
+if(!require(terra)) install.packages("terra", 
+repos = "http://cran.us.r-project.org")
+if(!require(raster)) install.packages("raster", 
+repos = "http://cran.us.r-project.org")
+if(!require(mapview)) install.packages("mapview", 
+repos = "http://cran.us.r-project.org")
+if(!require(MODIStsp)) install.packages("MODIStsp", 
+repos = "http://cran.us.r-project.org")
+if(!require(dotenv)) install.packages("dotenv", 
+repos = "http://cran.us.r-project.org")
+if(!require(raster)) install.packages("raster", 
+repos = "http://cran.us.r-project.org")
+if(!require(rasterVis)) install.packages("rasterVis",
+repos = "http://cran.us.r-project.org")
+if(!require(DEPONS2R)) install.packages("DEPONS2R",
+repos = "http://cran.us.r-project.org")
+if(!require(ggOceanMaps)) install.packages("ggOceanMaps",
+repos = "http://cran.us.r-project.org")
+if(!require(gdalUtilities)) install.packages("gdalUtilities",
+repos = "http://cran.us.r-project.org")
+```
+
+## NYC County shapefile
+
+Here we will obtain US County Shapefile from [NYC Open Data]("https://data.cityofnewyork.us/City-Government/Borough-Boundaries/tqmj-j8zm") and utilize it to visualize previously agreed upon extent for MODIS data download.
+This will help us visualize the area in question, and verify accuracy of information downloaded.
+
+```{r nyc-county-shapefile}
+# create tempfiles
+temp <- tempfile()
+temp_2 <- tempfile()
+
+# download zipfile save to temp
+URL <- "https://data.cityofnewyork.us/api/geospatial/tqmj-j8zm?method=export&format=Shapefile"
+download.file(URL, temp)
+
+# unzip
+unzip(zipfile = temp, exdir = temp_2)
+
+#read in shapefile
+nyc_county_df <- st_read(temp_2)
+```
+
+View results.
+
+```{r preview-shapefile}
+# preview shapefile
+mapview(nyc_county_df)
+```
+
+Get bbox of NYC shapefile.
+
+```{r get-bbox}
+nyc_county_bbox <- st_bbox(nyc_county_df)
+```
+
+## Modis exploration
+
+Get product names that are surface temperature related.
+
+```{r get-product-code}
+# surface temperature
+surface_temp <- MODIStsp_get_prodnames()[13:20]
+
+surface_temp
+```
+
+Let's loop through these and see what product layers are available for each one. 
+
+```{r loop-through-products}
+# extrapolate product name
+surface_temp_prod_name <- surface_temp %>% 
+  str_extract("(?<=\\().*(?=\\))")
+
+# loop over each product name to see what layers are available
+map(.x = surface_temp_prod_name,
+    .f = MODIStsp_get_prodlayers)
+```
+
+## Modis data download
+
+Download daily 1km `Surf_Temp_Monthly_005dg (M*D11C3)`
+
+```{r download-2016-2020-monthly-005dg, eval=FALSE}
+MODIStsp(gui             = FALSE,
+         out_folder      = paste0(getwd(),"/data"),
+         out_folder_mod  = paste0(getwd(),"/data"),
+         selprod         = 'Surf_Temp_Monthly_005dg (M*D11C3)',
+         bandsel         = "LST_Day_CMG", # daily surface temp
+         sensor = "Terra",
+         # your username for NASA http server
+         user            = Sys.getenv("EARTH_DATA_USER"),
+         # your password for NASA http server
+         password        = Sys.getenv("EARTH_DATA_PW"),
+         start_date      = '2016.01.01', 
+         end_date        = '2020.12.31', 
+         verbose         = TRUE,
+         spatmeth = "bbox",
+         bbox = nyc_county_bbox,
+         out_format      = 'GTiff',
+         compress        = 'LZW',
+         out_projsel     = 'User Defined',
+         output_proj     = 2263,
+         delete_hdf      = TRUE,
+         parallel        = TRUE,
+         reprocess = FALSE
+         )
+```
+
+## Exploratory data analysis (EDA)
+
+Now that data is downloaded, will conduct brief EDA to view exactly what was acquired.
+
+Get files from 2015 - 2020.
+
+```{r files-by-year}
+# set path
+# dropbox_path <- r"(C:\Users\jtws\Dropbox\data_projects\GeoTimeSeries\data_daily_7_4_22\Surf_Temp_Daily_1Km_v6\LST_Day_1km)"
+dropbox_path <- "/Users/justinwilliams/Dropbox/data_projects/GeoTimeSeries/data_daily_7_4_22/Surf_Temp_Daily_1Km_v6/LST_Day_1km"
+
+# function to list files from specific year
+extract_year <- function(pattern, path = dropbox_path) {
+  list.files(path = dropbox_path,
+             pattern = pattern,
+             full.names = T)
+}
+
+# create list
+daily_sur_temp <- list()
+for (i in 2015:2020) {
+  daily_sur_temp <- append(daily_sur_temp,paste0("daily_sur_temp_",i))
+}
+
+# pattern for extract function
+years <- as.character(c(2015:2020))
+
+# map to list
+daily_sur_temp_2015_2020 <- 
+  map(.x = years,
+      .f = extract_year)
+
+# change list names to years
+names(daily_sur_temp_2015_2020) <- daily_sur_temp
+```
+
+Convert to Spatraster, then brick, then stack, divided by year.
+
+```{r convert-to-Spatraster-brick-stack}
+# function to convert tiff files to stack
+stack_brick_rast <- function(raster_files) {
+  stack(brick(rast(raster_files)))
+}
+
+# map function
+daily_sur_temp_2015_2020_stack <- 
+  map(.x = daily_sur_temp_2015_2020,
+    .f = stack_brick_rast)
+```
+
+Function to aggregate monthly.
+
+```{r spot-check-missing-data}
+monthly_agg_temp <- function(temp_stack, month_name, 
+                              agg_function = "mean") {
+  
+  # format names and create indices
+  indices <- format(
+    as.Date(names(temp_stack), 
+            format="MOD11A1_LST_Day_1km_%Y_%j"), 
+            format = "%m")
+  indices <- as.numeric(indices) # coerce to num
+  
+  # agg mean monthly
+  month_agg <- stackApply(
+        x = temp_stack,
+        indices = indices,
+        fun = agg_function,
+        na.rm = T)
+  
+  # change names to month
+  names(month_agg) <- month.name
+  
+  # subset raster for named month
+  raster::subset(
+        month_agg, 
+        grep(month_name,names(month_agg),
+        value = T))
+}
+```
+
+Apply month agg function.
+
+```{r map-month-agg-function}
+mean_july_2015 <- monthly_agg_temp(daily_sur_temp_2015_stack,"July")
+
+plot(mean_july_2015)
+
+mean_tas_july_2015_2020 <- map(.x = daily_sur_temp_2015_2020_stack,
+                           .f = monthly_agg_temp,
+                           month_name = "July")
+
+mean_july_2015 <- monthly_agg_temp(daily_sur_temp_2015_2020_stack$daily_sur_temp_2015, "July")
+
+
+
+monthly_agg_temp(daily_sur_temp_2015_2020_stack$daily_sur_temp_2015,
+                "July")
+```
+
+
+Scale Kelvin and convert to Fahrenheit.
+
+```{r convert-temp}
+convert_fah <- function(raster_stack) {
+  # convert 0 to NA
+  raster_stack[raster_stack == 0] <- NA
+  # convert to Fahrenheit
+  1.8 * (raster_stack * 0.02 - 273) + 32
+}
+
+# apply to each raster file
+daily_sur_temp_2015_f <- convert_fah(daily_sur_temp_2015_stack)
+daily_sur_temp_2016_f <- convert_fah(daily_sur_temp_2016_stack)
+daily_sur_temp_2017_f <- convert_fah(daily_sur_temp_2017_stack)
+daily_sur_temp_2018_f <- convert_fah(daily_sur_temp_2018_stack)
+daily_sur_temp_2019_f <- convert_fah(daily_sur_temp_2019_stack)
+daily_sur_temp_2020_f <- convert_fah(daily_sur_temp_2020_stack)
+```
+
+
+Convert to Brick. Multiple Raster objects can be combined to produce a stack or brick. These data objects are frequently used for space-time data because they can store multiple rasters from different dates. 
+
+```{r tempbrick}
+# create brick
+tempbrick_2015_2020_f <- 
+  brick(daily_sur_temp_2015_rast_f, daily_sur_temp_2016_rast_f,      daily_sur_temp_2017_rast_f, daily_sur_temp_2018_rast_f, daily_sur_temp_2019_rast_f, daily_sur_temp_2020_rast_f)
+
+# name years
+names(tempbrick_2015_2020_f) <- 
+  c("Temp.2015","Temp.2016", "Temp.2017", 
+    "Temp.2018", "Temp.2019", "Temp.2020")
+```
+
+Get cellstats of each layer
+
+```{r cellstats}
+cellStats(tempbrick_2015_2020_f, stat = "mean")
+```
+
+Function to convert raster to df.
+
+```{r raster-to-df}
+rasterdf <- function(x, aggregate = 1) {
+  resampleFactor <- aggregate        
+  inputRaster <- x    
+  inCols <- ncol(inputRaster)
+  inRows <- nrow(inputRaster)
+  # Compute numbers of columns and rows in the new raster for mapping
+  resampledRaster <- raster(ncol=(inCols / resampleFactor), 
+                            nrow=(inRows / resampleFactor))
+  # Match to the extent of the original raster
+  extent(resampledRaster) <- extent(inputRaster)
+  # Resample data on the new raster
+  y <- resample(inputRaster,resampledRaster,method='ngb')
+  # Extract cell coordinates into a data frame
+  coords <- xyFromCell(y, seq_len(ncell(y)))
+  # Extract layer names
+  dat <- stack(as.data.frame(getValues(y)))
+  # Add names - 'value' for data, 'variable' to indicate different raster layers
+  # in a stack
+  names(dat) <- c('value', 'variable')
+  dat <- cbind(coords, dat)
+  dat
+}
+```
+
+Apply `rasterdf()` function to brick.
+
+```{r raster-to-df-brick}
+tempbrick_df <- rasterdf(tempbrick_2015_2020_f)
+summary(tempbrick_df)
+```
+
+Plot df with **ggplot**.
+
+```{r plot-df}
+# plot temp years
+ggplot() +
+  geom_raster(data = tempbrick_df, 
+              aes(x = x, y = y, fill = value)) +
+  geom_sf(data=clipped_shape_sf,
+          fill=NA,color="grey25", size=0.50) +
+  scale_fill_gradient(name = "Degrees F", 
+                      low = "yellow", high = "red") +
+  facet_wrap(~ variable, ncol = 3) + 
+  labs(title = "Mean Temperature (F) 2015 - 2020") +
+  theme_void() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title.position = "plot",
+        plot.title = element_text(hjust = 0.5))
+```
+
+Why does 2018 have so little records?
+
+```{r plot-2018}
+daily_sur_temp_2018_rast_f_df <- rasterdf(daily_sur_temp_2018_rast_f)
+daily_sur_temp_2018_rast_f_df %>% 
+  ggplot() + geom_raster(aes(x, y, fill = value))
+
+plot(daily_sur_temp_2018_rast)
+
+sum(!is.na(daily_sur_temp_2018_rast_f_df$value))
+```
+
+Looks like there is a bunch of missing data. This will have to be imputed at a
+latter stage. Let's look at a comparsion  off
+
+Histogram of brick
+
+```{r hist-brick}
+hist(tempbrick_2015_2020_f)
+```
+
+Density of brick
+
+```{r density-brick}
+density(tempbrick_2015_2020_f)
+```
+
+Density plot
+
+```{r density-plot}
+densityplot(tempbrick_2015_2020_f)
+```
+
+Compare years with correlation coefficient
+
+```{r correlation}
+pairs(tempbrick_2015_2020_f)
+```
+
+Let's compare temperature anomalies across these 6 years.
+
+```{r temp-anomaly}
+# get mean
+meantemp <- mean(tempbrick_2015_2020_f, na.rm = T)
+# get tempanom
+tempanom <- tempbrick_2015_2020_f - meantemp
+# set names
+names(tempanom) <- names(tempbrick_2015_2020_f)
+# turn into df
+tempanom_df <- rasterdf(tempanom)
+
+# plot
+ggplot() +
+  geom_raster(data = tempanom_df, aes(x = x, y = y, fill = value)) +
+  geom_sf(data=clipped_shape_sf, fill=NA,color="grey25", size=0.50) +
+  scale_fill_gradient2(name = "Degrees F", 
+                       low = "blue", 
+                       mid = "lightyellow", high = "red") +
+  facet_wrap(~ variable, ncol = 3) + 
+  labs(title = "Mean Temperature Orange County 2015 - 2020 (F)") +
+  theme_void() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title.position = "plot",
+        plot.title = element_text(hjust = 0.5))
+
+```
+
+## Resources
+
+[MODIStsp package documentation](https://docs.ropensci.org/MODIStsp/)
+[Geospatial Data Science with R](https://bookdown.org/mcwimberly/gdswr-book/raster-data-continuous-variables.html)
+
