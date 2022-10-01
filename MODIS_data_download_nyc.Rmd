@@ -53,10 +53,12 @@ temp_2 <- tempfile()
 
 # download zipfile save to temp
 URL <- "https://data.cityofnewyork.us/api/geospatial/tqmj-j8zm?method=export&format=Shapefile"
-download.file(URL, temp)
+download.file(URL, temp, mode = "wb")
 
 # unzip
 unzip(zipfile = temp, exdir = temp_2)
+
+temp_2
 
 #read in shapefile
 nyc_county_df <- st_read(temp_2)
@@ -127,6 +129,7 @@ MODIStsp(gui             = FALSE,
          reprocess = FALSE
          )
 ```
+
 
 ## Exploratory data analysis (EDA)
 
