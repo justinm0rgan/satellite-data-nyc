@@ -60,8 +60,8 @@ unzip(zipfile = temp, exdir = temp_2)
 
 temp_2
 
-#read in shapefile
-nyc_county_df <- st_read(temp_2)
+#read in shapefile and transform
+nyc_county_df <- st_read(temp_2) %>% st_transform(4326)
 ```
 
 View results.
@@ -74,7 +74,7 @@ mapview(nyc_county_df)
 Get bbox of NYC shapefile.
 
 ```{r get-bbox}
-nyc_county_bbox <- st_bbox(nyc_county_df)
+(nyc_county_bbox <- st_bbox(nyc_county_df))
 ```
 
 ## Modis exploration
@@ -83,9 +83,7 @@ Get product names that are surface temperature related.
 
 ```{r get-product-code}
 # surface temperature
-surface_temp <- MODIStsp_get_prodnames()[13:20]
-
-surface_temp
+(surface_temp <- MODIStsp_get_prodnames()[13:20])
 ```
 
 Let's loop through these and see what product layers are available for each one. 
@@ -119,11 +117,11 @@ MODIStsp(gui             = FALSE,
          end_date        = '2020.12.31', 
          verbose         = TRUE,
          spatmeth = "bbox",
-         bbox = nyc_county_bbox,
+         bbox = c(-118.828125,35.01915128,-116.015625,37.82067492),
          out_format      = 'GTiff',
          compress        = 'LZW',
          out_projsel     = 'User Defined',
-         output_proj     = 2263,
+         output_proj     = 4326,
          delete_hdf      = TRUE,
          parallel        = TRUE,
          reprocess = FALSE
