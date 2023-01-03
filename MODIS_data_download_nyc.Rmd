@@ -43,7 +43,7 @@ repos = "http://cran.us.r-project.org")
 
 ## NYC County shapefile
 
-Here we will obtain US County Shapefile from [NYC Open Data]("https://data.cityofnewyork.us/City-Government/Borough-Boundaries/tqmj-j8zm") and utilize it to visualize previously agreed upon extent for MODIS data download.
+Here we will obtain NYC County Shapefile from [NYC Open Data]("https://data.cityofnewyork.us/City-Government/Borough-Boundaries/tqmj-j8zm") and utilize it to obtain extent for MODIS data download.
 This will help us visualize the area in question, and verify accuracy of information downloaded.
 
 ```{r nyc-county-shapefile}
@@ -60,8 +60,8 @@ unzip(zipfile = temp, exdir = temp_2)
 
 temp_2
 
-#read in shapefile and transform
-nyc_county_df <- st_read(temp_2) %>% st_transform(4326)
+#read in shapefile
+nyc_county_df <- st_read(temp_2)
 ```
 
 View results.
@@ -117,17 +117,14 @@ MODIStsp(gui             = FALSE,
          end_date        = '2020.12.31', 
          verbose         = TRUE,
          spatmeth = "bbox",
-         bbox = c(-118.828125,35.01915128,-116.015625,37.82067492),
+         bbox = c(-74.25559, 40.49613, -73.70001, 40.91553),
          out_format      = 'GTiff',
          compress        = 'LZW',
-         out_projsel     = 'User Defined',
-         output_proj     = 4326,
          delete_hdf      = TRUE,
          parallel        = TRUE,
          reprocess = FALSE
          )
 ```
-
 
 ## Exploratory data analysis (EDA)
 
