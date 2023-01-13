@@ -23,6 +23,7 @@ if(!require(terra)) install.packages("terra",
 repos = "http://cran.us.r-project.org")
 if(!require(raster)) install.packages("raster", 
 repos = "http://cran.us.r-project.org")
+if(!require(luna)) remotes::install_github("rspatial/luna")
 if(!require(mapview)) install.packages("mapview", 
 repos = "http://cran.us.r-project.org")
 if(!require(MODIStsp)) install.packages("MODIStsp", 
@@ -78,6 +79,7 @@ Get bbox of NYC shapefile.
 ```
 
 ## Modis exploration
+### MODIStsp package
 
 Get product names that are surface temperature related.
 
@@ -106,8 +108,8 @@ Download daily 1km `Surf_Temp_Monthly_005dg (M*D11C3)`
 MODIStsp(gui             = FALSE,
          out_folder      = paste0(getwd(),"/data"),
          out_folder_mod  = paste0(getwd(),"/data"),
-         selprod         = 'Surf_Temp_Monthly_005dg (M*D11C3)',
-         bandsel         = "LST_Day_CMG", # daily surface temp
+         selprod         = 'Surf_Temp_Daily_1Km (M*D11A1)',
+         bandsel         = "LST_Day_1km", # daily surface temp
          sensor = "Terra",
          # your username for NASA http server
          user            = Sys.getenv("EARTH_DATA_USER"),
@@ -125,6 +127,59 @@ MODIStsp(gui             = FALSE,
          reprocess = FALSE
          )
 ```
+### Luna package
+
+```{r search-products}
+luna::getProducts("^MOD")
+```
+
+Get more info on a product
+```{r product-info}
+# set product
+product <- "MOD11A1"
+
+# get info
+luna::productInfo(product)
+```
+
+Set variables
+
+```{r set-variables}
+# set date
+start_date <- "2020-01-01"
+end_date <- "2020-12-31"
+
+# user id and pw
+username <- Sys.getenv("EARTH_DATA_USER")
+password <- Sys.getenv("EARTH_DATA_PW")
+
+# directory
+pathdir <- paste0(getwd(),"/data")
+
+# test file search
+test <- luna::getModis(product,
+                       start_date,
+                       end_date,
+                       aoi = nyc_county_df,
+                       download = F)
+
+# preview results
+test
+```
+Download data
+
+```{r download-modis-data}
+luna::getModis(product = product,
+               start_date = "2020-04-04",
+               end_date = end_date,
+               username = username,
+               password = password,
+               aoi = nyc_county_df,
+               download = T,
+               path = pathdir)
+```
+
+
 
 ## Exploratory data analysis (EDA)
 
