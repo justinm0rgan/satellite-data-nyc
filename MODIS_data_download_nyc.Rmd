@@ -154,7 +154,7 @@ username <- Sys.getenv("EARTH_DATA_USER")
 password <- Sys.getenv("EARTH_DATA_PW")
 
 # directory
-pathdir <- paste0(getwd(),"/data")
+pathdir <- paste0("/Users/justinwilliams/Dropbox/data_projects/Modis/",product)
 
 # test file search
 test <- luna::getModis(product,
